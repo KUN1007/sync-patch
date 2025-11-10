@@ -41,6 +41,6 @@ export function renderNoteFromTemplate(template: string, ctx: NoteContext) {
 }
 
 export async function loadNoteTemplate() {
-  const buf = await readFile('migration/sync-ts/vn-sync/note.md')
+  const buf = await readFile('./vn-sync/note.md')
   return buf.toString('utf8')
 }

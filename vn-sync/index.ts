@@ -43,25 +43,25 @@ export async function createPatchIfMissing(parsed: ParsedPatchFileName) {
   const releasedRaw = String((vn as any)?.released || '').trim()
   const released = releasedRaw ? formatDateYYMMDD(releasedRaw) : 'unknown'
 
-  const patch = await prisma.patch.create({
-    data: {
-      name: '',
-      name_en_us: nameEn || '',
-      name_ja_jp: nameJa || '',
-      vndb_id: parsed.vndbId,
-      user_id: 1,
-      banner: '',
-      released,
-      content_limit: 'sfw',
-      type: [],
-      language: [],
-      engine: [],
-      platform: [],
-    },
-  })
-
   // Upload banner if possible
   try {
+    const patch = await prisma.patch.create({
+      data: {
+        name: '',
+        name_en_us: nameEn || '',
+        name_ja_jp: nameJa || '',
+        vndb_id: parsed.vndbId,
+        user_id: 1,
+        banner: '',
+        released,
+        content_limit: 'sfw',
+        type: [],
+        language: [],
+        engine: [],
+        platform: [],
+      },
+    })
+
     const screenshotUrl = await pickSfwScreenshotUrl(vn)
     if (screenshotUrl) {
       const res = await fetch(screenshotUrl)
@@ -74,9 +74,11 @@ export async function createPatchIfMissing(parsed: ParsedPatchFileName) {
         })
       }
     }
-  } catch {}
 
-  return patch.id
+    return patch.id
+  } catch (e) {
+    console.log(e)
+  }
 }
 
 export function formatSizeString(bytes: number): string {
@@ -109,53 +111,64 @@ export async function createPatchResourceForFile(
     fileName: sanitizeFileName(parsed.fileName),
   })
 
-  const resource = await prisma.patch_resource.create({
-    data: {
-      patch_id: patchId,
-      user_id: 9147,
-      storage: 's3',
-      name: '',
-      model_name: '',
-      localization_group_name: parsed.groupName,
-      size: sizeStr,
-      code: '',
-      password: '',
-      note,
-      hash,
-      content: uploaded.url,
-      type: ['manual'],
-      language: [parsed.language],
-      platform: [parsed.platform],
-    },
-  })
+  console.log(note)
 
-  // union update to patch fields
-  const p = await prisma.patch.findUnique({
-    where: { id: patchId },
-    select: { type: true, language: true, platform: true },
-  })
-  if (p) {
-    const types = Array.from(new Set([...(p.type || []), 'manual']))
-    const langs = Array.from(new Set([...(p.language || []), parsed.language]))
-    const plats = Array.from(new Set([...(p.platform || []), parsed.platform]))
-    await prisma.patch.update({
-      where: { id: patchId },
+  try {
+    const resource = await prisma.patch_resource.create({
       data: {
-        resource_update_time: new Date(),
-        type: { set: types },
-        language: { set: langs },
-        platform: { set: plats },
+        patch_id: patchId,
+        user_id: 9147,
+        storage: 's3',
+        name: '',
+        model_name: '',
+        localization_group_name: parsed.groupName,
+        size: sizeStr,
+        code: '',
+        password: '',
+        note,
+        hash,
+        content: uploaded.url,
+        type: ['manual'],
+        language: [parsed.language],
+        platform: [parsed.platform],
       },
     })
-  }
 
-  return resource
+    // union update to patch fields
+    const p = await prisma.patch.findUnique({
+      where: { id: patchId },
+      select: { type: true, language: true, platform: true },
+    })
+    if (p) {
+      const types = Array.from(new Set([...(p.type || []), 'manual']))
+      const langs = Array.from(
+        new Set([...(p.language || []), parsed.language])
+      )
+      const plats = Array.from(
+        new Set([...(p.platform || []), parsed.platform])
+      )
+      await prisma.patch.update({
+        where: { id: patchId },
+        data: {
+          resource_update_time: new Date(),
+          type: { set: types },
+          language: { set: langs },
+          platform: { set: plats },
+        },
+      })
+    }
+
+    return resource
+  } catch (error) {
+    console.log(error)
+  }
 }
 
 export async function processOnePatchFile(filePath: string) {
   const parsed = parsePatchFileName(filePath)
   if (!parsed) return `Unrecognized filename format: ${filePath}`
   const patchId = await createPatchIfMissing(parsed)
+  if (!patchId) return
   return await createPatchResourceForFile(patchId, parsed)
 }
 
