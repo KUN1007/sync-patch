@@ -3,7 +3,7 @@ import {
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
-  AbortMultipartUploadCommand
+  AbortMultipartUploadCommand,
 } from '@aws-sdk/client-s3'
 import { createReadStream } from 'fs'
 import { stat } from 'fs/promises'
@@ -11,7 +11,15 @@ import { stat } from 'fs/promises'
 const CHUNK_SIZE = 5 * 1024 * 1024
 const MAX_CONCURRENT_UPLOADS = 4
 
-export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
+export const uploadLargeFileToS3 = async (
+  key: string,
+  filePath: string,
+  onProgress?: (info: {
+    uploadedParts: number
+    totalParts: number
+    percent: number
+  }) => void
+) => {
   const bucket = process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!
 
   try {
@@ -22,7 +30,7 @@ export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
       new CreateMultipartUploadCommand({
         Bucket: bucket,
         Key: key,
-        ContentType: 'application/octet-stream'
+        ContentType: 'application/octet-stream',
       })
     )
 
@@ -47,13 +55,13 @@ export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
           Key: key,
           UploadId: uploadId,
           PartNumber: partNumber,
-          Body: fileStream
+          Body: fileStream,
         })
 
         const response = await s3.send(uploadPartCommand)
         return {
           PartNumber: partNumber,
-          ETag: response.ETag!
+          ETag: response.ETag!,
         }
       })()
 
@@ -66,6 +74,13 @@ export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
         const results = await Promise.all(uploadPromises)
         completedParts.push(...results)
         uploadPromises.length = 0
+        if (onProgress) {
+          const uploadedParts = completedParts.length
+          const percent = totalParts > 0 ? uploadedParts / totalParts : 0
+          try {
+            onProgress({ uploadedParts, totalParts, percent })
+          } catch {}
+        }
       }
     }
 
@@ -75,8 +90,8 @@ export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
         Key: key,
         UploadId: uploadId,
         MultipartUpload: {
-          Parts: completedParts.sort((a, b) => a.PartNumber - b.PartNumber)
-        }
+          Parts: completedParts.sort((a, b) => a.PartNumber - b.PartNumber),
+        },
       })
     )
 
@@ -87,7 +102,7 @@ export const uploadLargeFileToS3 = async (key: string, filePath: string) => {
         new AbortMultipartUploadCommand({
           Bucket: bucket,
           Key: key,
-          UploadId: (error as any).uploadId
+          UploadId: (error as any).uploadId,
         })
       )
     }

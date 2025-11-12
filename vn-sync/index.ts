@@ -77,7 +77,7 @@ export async function createPatchIfMissing(parsed: ParsedPatchFileName) {
 
     return patch.id
   } catch (e) {
-    console.log(e)
+    console.error(e)
   }
 }
 
@@ -90,13 +90,33 @@ export function formatSizeString(bytes: number): string {
 
 export async function createPatchResourceForFile(
   patchId: number,
-  parsed: ParsedPatchFileName
+  parsed: ParsedPatchFileName,
+  opts?: {
+    onHashProgress?: (info: {
+      bytesRead: number
+      total: number
+      percent: number
+    }) => void
+    onUploadProgress?: (info: {
+      uploadedParts: number
+      totalParts: number
+      percent: number
+    }) => void
+    log?: (msg: string) => void
+  }
 ) {
-  const hash = await generateFileHash(parsed.filePath)
-  const uploaded = await uploadPatchFileToS3(patchId, hash, parsed.filePath)
+  opts?.log?.('hash:start')
+  const hash = await generateFileHash(parsed.filePath, opts?.onHashProgress)
+  opts?.log?.('hash:done')
+  // Determine size for logging and later note formatting
+  const size = (await (await import('fs/promises')).stat(parsed.filePath)).size
+  opts?.log?.(`upload:start size=${size}`)
+  const uploaded = await uploadPatchFileToS3(patchId, hash, parsed.filePath, {
+    onUploadProgress: opts?.onUploadProgress,
+  })
+  opts?.log?.('upload:done')
   if (typeof uploaded === 'string') return uploaded
 
-  const size = (await (await import('fs/promises')).stat(parsed.filePath)).size
   const sizeStr = formatSizeString(size)
   const noteTpl = await loadNoteTemplate()
   const note = renderNoteFromTemplate(noteTpl, {
@@ -160,7 +180,7 @@ export async function createPatchResourceForFile(
 
     return resource
   } catch (error) {
-    console.log(error)
+    console.error(error)
   }
 }
 

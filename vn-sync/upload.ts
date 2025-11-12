@@ -18,7 +18,14 @@ export async function uploadBannerForPatch(
 export async function uploadPatchFileToS3(
   patchId: number,
   hash: string,
-  filePath: string
+  filePath: string,
+  options?: {
+    onUploadProgress?: (info: {
+      uploadedParts: number
+      totalParts: number
+      percent: number
+    }) => void
+  }
 ) {
   const rawName = filePath.split(/[\\/]/).pop()!
   const fileName = sanitizeFileName(rawName)
@@ -28,7 +35,11 @@ export async function uploadPatchFileToS3(
     const r = await uploadSmallFileToS3(s3Key, filePath)
     if (typeof r === 'string') return r
   } else {
-    const r = await uploadLargeFileToS3(s3Key, filePath)
+    const r = await uploadLargeFileToS3(
+      s3Key,
+      filePath,
+      options?.onUploadProgress
+    )
     if (typeof r === 'string') return r
   }
   const url = `${process.env.KUN_VISUAL_NOVEL_S3_STORAGE_URL}/${s3Key}`
